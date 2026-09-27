@@ -187,6 +187,11 @@ jobs:
         # Expected to complete in < 120 s on the runner.
         run: cargo test --workspace --locked --features testutils prop_ -- --nocapture
 
+      - name: cargo test — contract invariants (#965)
+        # Explicitly runs the issue-specific suite in addition to the broader
+        # prop_ filter because its test names describe the invariant directly.
+        run: cargo test --workspace --locked --features testutils --test contract_invariants_965 -- --nocapture
+
       - name: cargo test — collaborative signing (#894)
         # Covers proposal creation, authorization, threshold execution,
         # duplicate-approval prevention, and expiry handling.

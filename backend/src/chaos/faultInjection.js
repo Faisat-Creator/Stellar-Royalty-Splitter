@@ -59,3 +59,33 @@ export function configureChaosFromEnv(controller = chaos, env = process.env) {
   }
   return controller;
 }
+
+/**
+ * Execute a fault and its recovery probe as one auditable scenario. The
+ * probes are supplied by callers so the harness stays independent of RPC,
+ * database, and WebSocket implementations.
+ */
+export async function runRecoveryScenario(controller, {
+  mode,
+  operation,
+  recovery,
+  label = mode,
+} = {}) {
+  if (!controller || typeof operation !== "function" || typeof recovery !== "function") {
+    throw new TypeError("runRecoveryScenario requires operation and recovery functions");
+  }
+  let injectedError = null;
+  try {
+    await controller.run(mode, operation, { label });
+  } catch (error) {
+    injectedError = error;
+  }
+  const recovered = await recovery(injectedError);
+  return {
+    mode,
+    label,
+    injected: injectedError !== null,
+    recovered,
+    errorCode: injectedError?.code ?? null,
+  };
+}

@@ -432,3 +432,26 @@ textarea::placeholder {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--accent-primary);
 }
+
+/* Semantic aliases used by the shared component library (#968). Keeping
+   these names separate from legacy tokens lets components migrate without
+   hard-coded colors and guarantees a complete dark-mode surface. */
+:root {
+  --color-canvas: var(--surface-canvas); --color-surface: var(--surface-raised); --color-surface-muted: var(--surface-sunken); --color-surface-input: var(--surface-input);
+  --color-text: var(--text-primary); --color-text-subtle: var(--text-secondary); --color-text-muted: var(--text-tertiary); --color-text-inverse: var(--text-on-accent);
+  --color-border: var(--border-default); --color-border-strong: var(--border-strong); --color-focus: var(--focus-ring); --color-link: var(--accent-primary); --color-accent: var(--accent-primary);
+  --color-success: var(--status-success-solid); --color-success-bg: var(--status-success-surface); --color-success-border: var(--status-success-border); --color-success-text: var(--status-success-text);
+  --color-warning: var(--status-warning-border); --color-warning-bg: var(--status-warning-surface); --color-warning-border: var(--status-warning-border); --color-warning-text: var(--status-warning-text);
+  --color-danger: var(--status-danger-solid); --color-danger-bg: var(--status-danger-surface); --color-danger-border: var(--status-danger-border); --color-danger-text: var(--status-danger-text);
+  --color-info: var(--status-info-border); --color-info-bg: var(--status-info-surface); --color-info-border: var(--status-info-border); --color-info-text: var(--status-info-text);
+  --line-height-tight: 1.2; --line-height-normal: 1.6; --line-height-loose: 1.8; --z-base: 0; --z-dropdown: 100; --z-modal: 1000; --z-toast: 1100;
+}
+[data-theme="dark"] {
+  --color-canvas: var(--surface-canvas); --color-surface: var(--surface-raised); --color-surface-muted: var(--surface-sunken); --color-surface-input: var(--surface-input);
+  --color-text: var(--text-primary); --color-text-subtle: var(--text-secondary); --color-text-muted: var(--text-tertiary); --color-text-inverse: var(--text-on-accent);
+  --color-border: var(--border-default); --color-border-strong: var(--border-strong); --color-focus: var(--focus-ring); --color-link: var(--accent-primary); --color-accent: var(--accent-primary);
+  --color-success: var(--status-success-border); --color-success-bg: var(--status-success-surface); --color-success-border: var(--status-success-border); --color-success-text: var(--status-success-text);
+  --color-warning: var(--status-warning-border); --color-warning-bg: var(--status-warning-surface); --color-warning-border: var(--status-warning-border); --color-warning-text: var(--status-warning-text);
+  --color-danger: var(--status-danger-border); --color-danger-bg: var(--status-danger-surface); --color-danger-border: var(--status-danger-border); --color-danger-text: var(--status-danger-text);
+  --color-info: var(--status-info-border); --color-info-bg: var(--status-info-surface); --color-info-border: var(--status-info-border); --color-info-text: var(--status-info-text);
+}

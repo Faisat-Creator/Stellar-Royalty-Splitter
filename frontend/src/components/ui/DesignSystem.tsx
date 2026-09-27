@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, HTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, ElementType, HTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
 import "./design-system.css";
 
 export type StatusTone = "neutral" | "success" | "warning" | "danger" | "info";
@@ -25,4 +25,34 @@ export function Field({ label, hint, error, ...props }: InputHTMLAttributes<HTML
 
 export function Alert({ tone = "info", children, ...props }: HTMLAttributes<HTMLDivElement> & { tone?: StatusTone; children: ReactNode }) {
   return <div className={`ds-alert ds-alert--${tone}`} role="status" {...props}>{children}</div>;
+}
+
+export function Heading({ level = 2, children, className = "", ...props }: HTMLAttributes<HTMLHeadingElement> & { level?: 1 | 2 | 3 | 4 | 5 | 6; children: ReactNode }) {
+  const Tag = `h${level}` as ElementType;
+  return <Tag className={`ds-heading ds-heading--${level} ${className}`.trim()} {...props}>{children}</Tag>;
+}
+
+export function Text({ tone = "primary", size = "md", children, className = "", ...props }: HTMLAttributes<HTMLParagraphElement> & { tone?: "primary" | "secondary" | "muted" | "danger"; size?: "sm" | "md" | "lg"; children: ReactNode }) {
+  return <p className={`ds-text ds-text--${tone} ds-text--${size} ${className}`.trim()} {...props}>{children}</p>;
+}
+
+export function Divider({ className = "", ...props }: HTMLAttributes<HTMLHRElement>) {
+  return <hr className={`ds-divider ${className}`.trim()} {...props} />;
+}
+
+export function Spinner({ label = "Loading", size = "md" }: { label?: string; size?: "sm" | "md" | "lg" }) {
+  return <span className={`ds-spinner ds-spinner--${size}`} role="status" aria-label={label} />;
+}
+
+export function Progress({ value, label, className = "", ...props }: HTMLAttributes<HTMLDivElement> & { value: number; label?: string }) {
+  const bounded = Math.max(0, Math.min(100, value));
+  return <div className={`ds-progress ${className}`.trim()} {...props} aria-label={label ?? `${bounded}% complete`}><span className="ds-progress__bar" style={{ width: `${bounded}%` }} /></div>;
+}
+
+export function EmptyState({ title, children, action, className = "", ...props }: HTMLAttributes<HTMLDivElement> & { title: string; action?: ReactNode; children?: ReactNode }) {
+  return <div className={`ds-empty-state ${className}`.trim()} {...props}><Heading level={3}>{title}</Heading>{children && <Text tone="secondary">{children}</Text>}{action}</div>;
+}
+
+export function IconButton({ label, children, className = "", ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; children: ReactNode }) {
+  return <button className={`ds-icon-button ${className}`.trim()} aria-label={label} type="button" {...props}>{children}</button>;
 }

@@ -1,5 +1,5 @@
 import { jest, describe, expect, test } from "@jest/globals";
-import { ChaosController, configureChaosFromEnv } from "../src/chaos/faultInjection.js";
+import { ChaosController, configureChaosFromEnv, runRecoveryScenario } from "../src/chaos/faultInjection.js";
 
 describe("chaos fault injection (#966)", () => {
   test("is fail-safe and transparent when disabled", async () => {
@@ -33,4 +33,19 @@ describe("chaos fault injection (#966)", () => {
     configureChaosFromEnv(controller, { CHAOS_ENABLED: "true", CHAOS_MODES: "rpc-timeout,latency-spike", CHAOS_PROBABILITY: "0.2", CHAOS_LATENCY_MS: "25" });
     expect(controller.snapshot().configuredModes).toEqual(["rpc-timeout", "latency-spike"]);
   });
+
+  test.each(["rpc-timeout", "database-unavailable", "websocket-drop"])(
+    "runs a %s scenario through an explicit recovery probe",
+    async (mode) => {
+      const controller = new ChaosController({ enabled: true, random: () => 0, logger: { warn: jest.fn() } });
+      controller.configure({ mode, probability: 1 });
+      const operation = jest.fn().mockResolvedValue("not reached");
+      const recovery = jest.fn().mockResolvedValue(true);
+      const result = await runRecoveryScenario(controller, { mode, operation, recovery, label: "recovery-test" });
+      expect(result).toMatchObject({ mode, label: "recovery-test", injected: true, recovered: true });
+      expect(result.errorCode).toMatch(/^CHAOS_/);
+      expect(operation).not.toHaveBeenCalled();
+      expect(recovery).toHaveBeenCalledWith(expect.objectContaining({ code: result.errorCode }));
+    },
+  );
 });

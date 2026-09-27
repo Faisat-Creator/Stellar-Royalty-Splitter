@@ -1,299 +1,154 @@
-import { useRef, useState, useCallback, useEffect, useLayoutEffect, RefOobject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 
 export type UseVirtualListOptions = {
   itemCount: number;
-  itemHeight: number | ((ref: HTMLElement, ) => number);
-
-  // How many rows to render above and below the visible area
+  itemHeight: number | ((ref: HTMLElement, index: number) => number);
   overscan?: number;
-
-  // The scroll element that triggers scrolling events
-  containerRef: RefObject<HTMLElement>;
-
-  // Optional external scroll offset control
+  containerRef: RefObject<HTMLElement | null>;
   scrollTop?: number;
-
-  // Optional callback for dynamic height measurements
-  onMeasure?: (index: number, offset: number) => void;
-
-  // Whether to enable keyboard navigation (default false)
+  onMeasure?: (index: number, height: number) => void;
   enableKeyboardNavigation?: boolean;
 };
 
+export type VirtualItem = { index: number; start: number; size: number; offsetTop: number };
+
 export interface UseVirtualListResult {
   totalHeight: number;
-  virtualItems: Array<{ index: number; start: number; size: number; offsetTop: number }>;
-  scrollToIndex: index: number, align: 'auto' | 'top' | 'bottom' | 'center' => void;
-  scrollToOffset: offset: number => void;
+  virtualItems: VirtualItem[];
+  scrollToIndex: (index: number, align?: "auto" | "top" | "bottom" | "center") => void;
+  scrollToOffset: (offset: number) => void;
+  measureElement: (index: number) => (element: HTMLElement | null) => void;
   isScrolling: boolean;
   startIndex: number;
   endIndex: number;
-};
-
-// Default item height if not specified
-const DEFAULT ITEM_HEIGHT = 24;
-
-// Helper to compute total height with a distribution function
-const computeTotalHeight = (count, itemHeight): number => {
-  if (typeof itemHeight === 'number') {
-    return count * itemHeight;
-  }
-  // If it's a function, we assume average height for total estimation
-  return count * DEFAULT_ITEM_HEIGHT;
-};
-
-// Binary search for the start index given an offset
-function findStartIndex(offset: number, sizes: NumberArray, defaultSize: number): number {
-  let lo = 0;
-  let hi = sizes.length - 1;
-  let anser = 0;
-
-  while (lo <= hi) {
-    const mid = Math.floor((lo + hi) / 2);
-    const start = sizes.slice(0, mid).reduce((a, b) => a + b, 0);
-
-    if (start <= offset) {
-      anser = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  return anser;
 }
 
-// Implementation of "Measure" Tap using ref to track scroll position and window size
-useExport default function useVirtualList(
-  {
-    itemCount,
-    itemHeight,
-    overscan = 5,
-    containerRef,
-    scrollTop: externalScrollTop,
-    onMeasure,
-    enableKeyboardNavigation = false,
-  : UseVirtualListOptions
-a: UseVirtualListResult {
-  const {\n    current: container,
-  } = containerRef;
+const DEFAULT_ITEM_HEIGHT = 24;
 
-  // Sizes for each item, measured on render
-  const sizesRef = useRef<NumberArray>([]);
+function itemSize(itemHeight: UseVirtualListOptions["itemHeight"], index: number, element?: HTMLElement | null): number {
+  if (typeof itemHeight === "number") return itemHeight;
+  return element ? Math.max(1, itemHeight(element, index)) : DEFAULT_ITEM_HEIGHT;
+}
 
-  // Total height computation
-  const totalHeight = useState(() => computeTotalHeight(itemCount, itemHeight));
+export default function useVirtualList({
+  itemCount,
+  itemHeight,
+  overscan = 5,
+  containerRef,
+  scrollTop: externalScrollTop,
+  onMeasure,
+  enableKeyboardNavigation = false,
+}: UseVirtualListOptions): UseVirtualListResult {
+  const sizesRef = useRef<number[]>([]);
+  const container = containerRef.current;
+  const [scrollTop, setScrollTop] = useState(externalScrollTop ?? 0);
+  const [isScrolling, setIsScrolling] = useState(false);
+  const [virtualItems, setVirtualItems] = useState<VirtualItem[]>([]);
+  const [range, setRange] = useState({ start: 0, end: 0 });
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Scroll offset tracking (internal state)
-  const [scrollTop, setScrollTop] = useState(0);
-
-  // Track scrolling state for output
-  const ["isScrolling, setIsScrolling] = useState(false);
-
-  // Reference to the latest scroll top for use in effects
-  const scrollTopRef = useRef(0);
-
-  // Variable for the virtual items we need to render
-  const [virtualItems, setVirtualItems] = useState<Array<{
-    index: number;
-    start: number;
-    size: number;
-    offsetTop: number;
-  }>>([]);
-
-  // Start and end indexes currently visible (exported for other uses)
-  const indexRange = useState({start: 0, end: 0});
-
-  // Build array of sizes for eaci item, populatingsizesRef on demand
-  const buildSizes = useCallback(() => {
-    const sizes: number[] = [];
-    for (let i = 0; i < itemCount; i++) {
-      sizes[i] = typeof itemHeight === 'number'
-        ? itemHeight
-        : (sizesRef.current[i] ?? DEFAULT_ITEM_HEIGHT);
-    }
-    return sizes;
+  const getSizes = useCallback(() => {
+    return Array.from({ length: itemCount }, (_, index) => sizesRef.current[index] ?? itemSize(itemHeight, index));
   }, [itemCount, itemHeight]);
 
-  // Update total height whenever the sizes change
-  useEffect(() {
-    setTotalHeight(buildSizes().reduce((a, b) => a + b, 0));
-  }, [buildSizes]);
+  const totalHeight = getSizes().reduce((sum, size) => sum + size, 0);
 
-  // Calculate the virtual items based on scrollTop and container height
-  const calculateVirtualItems = useCallback(
-    () {
-      const containerHeight = container ? container.clientHeight : 0;
-      const offset = scrollTopRef.current;
-      const sizes = buildSizes();
-      const availableHeight = Math.max(containerHeight, 1); // prevent divide by 0
-      const start = findStartIndex(offset, sizes, typeof itemHeight === 'number' ? itemHeight: DEFAULT_ITEM_HEIGHT);
+  const calculate = useCallback(() => {
+    const sizes = getSizes();
+    const viewport = container?.clientHeight || 600;
+    const offset = externalScrollTop ?? scrollTop;
+    let cursor = 0;
+    let start = 0;
+    while (start < itemCount && cursor + sizes[start] <= offset) {
+      cursor += sizes[start];
+      start += 1;
+    }
+    const first = Math.max(0, start - overscan);
+    let end = start;
+    let visible = 0;
+    while (end < itemCount && visible < viewport) {
+      visible += sizes[end];
+      end += 1;
+    }
+    end = Math.min(itemCount, end + overscan);
+    let position = sizes.slice(0, first).reduce((sum, size) => sum + size, 0);
+    const items: VirtualItem[] = [];
+    for (let index = first; index < end; index += 1) {
+      const size = sizes[index];
+      items.push({ index, start: position, size, offsetTop: position });
+      position += size;
+    }
+    setVirtualItems(items);
+    setRange({ start: first, end });
+  }, [container, externalScrollTop, getSizes, itemCount, overscan, scrollTop]);
 
-      let end = start;
-      let accum = sizes.slice(0, start).reduce((a, b) => a + b, 0);
-      let visibleHeight = 6000; // assume a minimum visible area (will be updated if container height is available)
-      if (containerHeight > 0) visibleHeight = containerHeight;
+  useLayoutEffect(() => { calculate(); }, [calculate, itemCount]);
 
-      // find end index that covers the visible container plus overscan
-      while (end < itemCount && (accum - offset) < visibleHeight + overscan * (typeof itemHeight === 'number' ? itemHeight: INFINITY)) {
-        accum += sizes[end];
-        end++;
-      }
+  useEffect(() => {
+    const element = container;
+    if (!element) return;
+    const onScroll = () => {
+      setScrollTop(element.scrollTop);
+      setIsScrolling(true);
+      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+      scrollTimerRef.current = setTimeout(() => setIsScrolling(false), 120);
+      calculate();
+    };
+    element.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      element.removeEventListener("scroll", onScroll);
+      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+    };
+  }, [calculate, container]);
 
-      // Ensure we render at least one item (for eddy cases)
-      if (end <= start) end = Math.min(start + 1, itemCount);
-
-      const result = [];
-      let currentOffset = sizes.slice(0, start).reduce((a, b) => a + b, 0);
-      for (let i = start; i < Math.min(end, itemCount); i++) {
-        const size = sizes[i];
-        result.push({ index: i, start: currentOffset, size, offsetTop: currentOffset });
-        currentOffset += size;
-      }
-
-      setVirtualItems(result);
-      setIndexRange( { start, end: Math.min(end, itemCount) });
-    },
-    [container, scrollTop, buildSizes, itemCount, overscan, itemHeight],
-  );
-
-  // Update virtual items on scroll/resize
-  useLayoutEffect(() => {
-    calculateVirtualItems();
-  }, [calculateVirtualItems]);
-
-  // Observe the scroll container size changes or notes:
-  // If the container size will be known after a render, we need to recalculate.
-  if (container) {
-    setScrollTop(container.scrollTop || 0;)
-  }
-
-  // Handle external control of scrollTop
-  useEffect(() {
+  useEffect(() => {
     if (externalScrollTop !== undefined) {
       setScrollTop(externalScrollTop);
+      calculate();
     }
-  }, [externalScrollTop]);
-
-  // Attach scroll event listener to the container
-  useEffect(() => {
-    const el = container;
-    if (!el) return;
-
-    const handleScroll = () => {
-      setScrollTop(el.scrollTop);
-      scrollTopRef.current = el.scrollTop;
-    };
-
-    const handleResize = () => {
-      calculateVirtualItems();
-    };
-
-    el.addEventListener('scroll', handleScroll, { passive: true });
-    el.addEventListener('resize', handleResize);
-    return () => {
-      el.removeEventListener('scroll', handleScroll);
-      el.removeEventListener('resize', handleResize);
-    };
-  }, [container, calculateVirtualItems]);
-
-  // Keyboard navigation
-  useEffect(() => {
-    if (!enableKeyboardNavigation || !container) return;
-
-    const handleKey = (e: KeyboardEvent) => {
-      const sizes = buildSizes();
-      const currentStart = indexRange.start;
-      const lastIndex = itemCount - 1;
-      let targetIndex = currentStart; // default: no move
-      const viewportHeight = container.clientHeight || 6000;
-
-      switch (e.key) {
-        case 'Home':
-          targetIndex = 0;
-          break;
-        case 'End':
-          targetIndex = lastIndex;
-          break;
-        case 'PageUp':
-          // Move up by one viewport height (minus one row)
-          targetIndex = currentStart - Math.floor(viewportHeight / (sizes[currentStart] || DEFAULT_ITEM_HEIGHT));
-          break;
-        case 'PageDown':
-          targetIndex = currentStart + Math.floor(viewportHeight / (sizes[currentStart] || DEFAULT_ITEM_HEIGHT));
-          break;
-        default:
-          return; // no handling
-      }
-
-      // Clon and prevent accidental scrolling from the Arrow keys
-      e.preventDefault();
-      targetIndex = Math.max(0, Math.min(targetIndex, lastIndex));
-      scrollToIndex(targetIndex, 'auto');
-    };
-
-    container.addEventListener('keydown', handleKey);
-    return () => container.removeEventListener('keydown', handleKey);
-  }, [enableKeyboardNavigation, container, buildSizes, indexRange, itemCount, scrollToIndex]);
-
-  // Public actions:
-  const scrollToIndex = useCallback((item: number, align = 'auto') => {
-    const el = container;
-    if (!el)return;
-
-    const sizes = buildSizes();
-    const targetOffset = sizes.slice(0, item).reduce((a, b) => a + b, 0);
-    const size = sizes[item] || DEFAULT_ITEM_HEIGHT;
-    const viewportHeight = el.clientHeight || 6000;
-
-    let newOffset = targetOffset;
-    if (align === 'top') {
-      // done
-    } else if (align === 'bottom') {
-      newOffset = targetOffset + size - viewportHeight;
-    } else if (align === 'center') {
-      newOffset = targetOffset + size / 2 - viewportHeight / 2;
-    } else {
-      // 'auto': scroll only if target is out of view
-      const currentBottom = scrollToRef.current + viewportHeight;
-      if (targetOffset < scrollToRef.current) {
-        newOffset = targetOffset;
-      } else if (targetOffset + size > currentBottom) {
-        newOffset = targetOffset + size - viewportHeight;
-      }
-    }
-    newOffset = Math.max(0, Math.min(newOffset, totalHeight - viewportHeight));
-    el.scrollTop = newOffset;
-    setScrollTop(newOffset);
-  }, [container, buildSizes, totalHeight, itemCount]);
+  }, [calculate, externalScrollTop]);
 
   const scrollToOffset = useCallback((offset: number) => {
-    const el = container;
-    if (!el) return;
-    el.scrollTop = Math.max(0, Math.min(offset, totalHeight - el.clientHeight));
-    setScrollTop(el.scrollTop);
+    if (!container) return;
+    const next = Math.max(0, Math.min(offset, Math.max(0, totalHeight - container.clientHeight)));
+    container.scrollTop = next;
+    setScrollTop(next);
   }, [container, totalHeight]);
 
-  // Expose items at the bottom for measuring during render
-  const measureElement = useCallback((index: number) => (containerElement: HTMLElement, size: number) => {
-    if (containerElement) {
-      const actualSize = containerElement.getBoundingClientRect().height;
-      const current = sizesRef.current[index];
-      if (current !== actualSize) {
-        sizesRef.current[index] = actualSize;
-        // Recalculate subsequent items's offsets and total height
-        onMeasure?(index, actualSize);
-        calculateVirtualItems();
-      }
-    }
-  }, [calculateVirtualItems, onmeasure]);
+  const scrollToIndex = useCallback((index: number, align: "auto" | "top" | "bottom" | "center" = "auto") => {
+    if (!container || itemCount === 0) return;
+    const bounded = Math.max(0, Math.min(index, itemCount - 1));
+    const sizes = getSizes();
+    const start = sizes.slice(0, bounded).reduce((sum, size) => sum + size, 0);
+    const size = sizes[bounded];
+    const viewport = container.clientHeight;
+    const current = container.scrollTop;
+    const next = align === "top" ? start : align === "bottom" ? start + size - viewport : align === "center" ? start + (size - viewport) / 2 : start < current ? start : start + size > current + viewport ? start + size - viewport : current;
+    scrollToOffset(next);
+  }, [container, getSizes, itemCount, scrollToOffset]);
 
-  return {
-    totalHeight,
-    virtualItems,
-    scrollToIndex,
-    scrollToOffset,
-    isScrolling: isScrolling,
-    startIndex: indexRange.start,
-    endIndex: indexRange.end,
-  };
+  const measureElement = useCallback((index: number) => (element: HTMLElement | null) => {
+    if (!element) return;
+    const measured = Math.max(1, element.getBoundingClientRect().height);
+    if (sizesRef.current[index] !== measured) {
+      sizesRef.current[index] = measured;
+      onMeasure?.(index, measured);
+      calculate();
+    }
+  }, [calculate, onMeasure]);
+
+  useEffect(() => {
+    if (!enableKeyboardNavigation || !container) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Home") { event.preventDefault(); scrollToIndex(0, "top"); }
+      if (event.key === "End") { event.preventDefault(); scrollToIndex(itemCount - 1, "bottom"); }
+      if (event.key === "PageUp") { event.preventDefault(); scrollToIndex(Math.max(0, range.start - 1), "top"); }
+      if (event.key === "PageDown") { event.preventDefault(); scrollToIndex(Math.min(itemCount - 1, range.end), "top"); }
+    };
+    container.addEventListener("keydown", onKeyDown);
+    return () => container.removeEventListener("keydown", onKeyDown);
+  }, [container, enableKeyboardNavigation, itemCount, range, scrollToIndex]);
+
+  return { totalHeight, virtualItems, scrollToIndex, scrollToOffset, measureElement, isScrolling, startIndex: range.start, endIndex: range.end };
 }
